@@ -1,0 +1,106 @@
+#!/bin/bash
+
+# Directory containing the .check files
+CHECK_DIR="/usr/local/nagios/check_procs"
+
+# Path to the check_procs plugin
+CHECK_PROCS="/usr/local/nagios/libexec/check_procs"
+
+# Initialize variables
+STATUS=0
+OUTPUT=""
+PERFDATA=""
+
+# Function to get the highest status
+get_status() {
+    if [ $1 -gt $STATUS ]; then
+        STATUS=$1
+    fi
+}
+
+# Loop through all .check files in the directory
+for FILE in "$CHECK_DIR"/*.check; do
+    # Check if there are any .check files
+    if [ ! -e "$FILE" ]; then
+        echo "UNKNOWN - No .check files found in $CHECK_DIR"
+        exit 3
+    fi
+
+    # Read the contents of the .check file
+    NAME=""
+    WARNING=""
+    CRITICAL=""
+    USER=""
+
+    while IFS=':' read -r KEY VALUE; do
+        KEY=$(echo "$KEY" | tr -d ' ')
+        VALUE=$(echo "$VALUE" | tr -d ' ')
+        case "$KEY" in
+            name)
+                NAME="$VALUE"
+                ;;
+            warning)
+                WARNING="$VALUE"
+                ;;
+            critical)
+                CRITICAL="$VALUE"
+                ;;
+            user)
+                USER="$VALUE"
+                ;;
+        esac
+    done < "$FILE"
+
+    # Check if NAME is set
+    if [ -z "$NAME" ]; then
+        echo "UNKNOWN - Missing 'name' in $FILE"
+        exit 3
+    fi
+
+    # Set default thresholds if not specified
+    WARNING="${WARNING:-1:}"
+    CRITICAL="${CRITICAL:-1:}"
+
+    # Build the check_procs command
+    CMD="$CHECK_PROCS -C \"$NAME\" -w \"$WARNING\" -c \"$CRITICAL\""
+
+    # Include the user if specified
+    if [ -n "$USER" ]; then
+        CMD+=" -u \"$USER\""
+    fi
+
+    # Execute the command and capture the output and exit code
+    OUTPUT_LINE=$(eval $CMD)
+    EXIT_CODE=$?
+
+    # Append to the overall output and performance data
+    OUTPUT+="[$NAME] $OUTPUT_LINE | "
+    PERFDATA+="$(echo "$OUTPUT_LINE" | awk -F'|' '{print $2}') "
+
+    # Update the overall status
+    get_status $EXIT_CODE
+done
+
+# Remove trailing separators
+OUTPUT=${OUTPUT% | }
+PERFDATA=${PERFDATA% }
+
+# Print the final output
+case $STATUS in
+    0)
+        echo "OK - All processes are within thresholds: $OUTPUT | $PERFDATA"
+        exit 0
+        ;;
+    1)
+        echo "WARNING - Some processes have warnings: $OUTPUT | $PERFDATA"
+        exit 1
+        ;;
+    2)
+        echo "CRITICAL - Some processes are critical: $OUTPUT | $PERFDATA"
+        exit 2
+        ;;
+    *)
+        echo "UNKNOWN - Unable to determine status: $OUTPUT | $PERFDATA"
+        exit 3
+        ;;
+esac
