@@ -1,6 +1,6 @@
 # Nagios Multi-Process Checker Script
 
-This script, ```check_multi_procs.sh```, is designed to monitor multiple processes on a system using Nagios. It reads configuration files that specify the processes to check, along with their warning and critical thresholds, and aggregates the results into a single service check within Nagios.
+This script, ```check_multi_procs```, is designed to monitor multiple processes on a system using Nagios. It reads configuration files that specify the processes to check, along with their warning and critical thresholds, and aggregates the results into a single service check within Nagios.
 
 ## Features
 
@@ -46,9 +46,9 @@ critical: 1:55
 
 1. **Place the Script**
 
-Save the script as ``/usr/local/nagios/libexec/check_multi_procs.sh`` and make it executable:
+Save the script as ``/usr/local/nagios/libexec/check_multi_procs`` and make it executable:
 ```bash
-chmod +x /usr/local/nagios/libexec/check_multi_procs.sh
+chmod +x /usr/local/nagios/libexec/check_multi_procs
 ```
 2. **Create the Configuration Directory**
 
