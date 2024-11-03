@@ -1,0 +1,110 @@
+#!/bin/bash
+
+# Configuration file path
+CONFIG_FILE="/usr/local/nagios/check_disk/all.conf"
+
+# Path to the check_disk plugin
+CHECK_DISK="/usr/local/nagios/libexec/check_disk"
+
+# Initialize variables
+STATUS=0
+OUTPUT=""
+PERFDATA=""
+
+# Function to get the highest status
+get_status() {
+    if [ $1 -gt $STATUS ]; then
+        STATUS=$1
+    fi
+}
+
+# Read the configuration file
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "UNKNOWN - Configuration file not found: $CONFIG_FILE"
+    exit 3
+fi
+
+# Read the configuration file and parse entries
+while IFS= read -r LINE || [ -n "$LINE" ]; do
+    # Skip empty lines and comments
+    [[ -z "$LINE" ]] && continue
+    [[ "$LINE" =~ ^#.* ]] && continue
+
+    # If line starts with 'device:', start a new entry
+    if [[ "$LINE" =~ ^device:\ (.*) ]]; then
+        if [ -n "$DEVICE" ]; then
+            # Process the previous device
+            # Build the check_disk command
+            CMD="$CHECK_DISK -w \"$DISK_WARNING\" -c \"$DISK_CRITICAL\" -W \"$INODE_WARNING\" -K \"$INODE_CRITICAL\" -p \"$DEVICE\""
+
+            # Execute the command
+            OUTPUT_LINE=$(eval $CMD)
+            EXIT_CODE=$?
+
+            # Append to the overall output and performance data
+            OUTPUT+="[$DEVICE] $OUTPUT_LINE | "
+            PERFDATA+="$(echo "$OUTPUT_LINE" | awk -F'|' '{print $2}') "
+
+            # Update the overall status
+            get_status $EXIT_CODE
+        fi
+        # Start a new device entry
+        DEVICE="${BASH_REMATCH[1]}"
+        DISK_WARNING=""
+        DISK_CRITICAL=""
+        INODE_WARNING=""
+        INODE_CRITICAL=""
+    else
+        # Parse parameter lines
+        if [[ "$LINE" =~ ^disk_warning:\ (.*) ]]; then
+            DISK_WARNING="${BASH_REMATCH[1]}"
+        elif [[ "$LINE" =~ ^disk_critical:\ (.*) ]]; then
+            DISK_CRITICAL="${BASH_REMATCH[1]}"
+        elif [[ "$LINE" =~ ^inode_warning:\ (.*) ]]; then
+            INODE_WARNING="${BASH_REMATCH[1]}"
+        elif [[ "$LINE" =~ ^inode_critical:\ (.*) ]]; then
+            INODE_CRITICAL="${BASH_REMATCH[1]}"
+        fi
+    fi  
+done < "$CONFIG_FILE"
+
+# Process the last device
+if [ -n "$DEVICE" ]; then
+    # Build the check_disk command
+    CMD="$CHECK_DISK -w \"$DISK_WARNING\" -c \"$DISK_CRITICAL\" -W \"$INODE_WARNING\" -K \"$INODE_CRITICAL\" -p \"$DEVICE\""
+
+    # Execute the command
+    OUTPUT_LINE=$(eval $CMD)
+    EXIT_CODE=$?
+
+    # Append to the overall output and performance data
+    OUTPUT+="[$DEVICE] $OUTPUT_LINE | "
+    PERFDATA+="$(echo "$OUTPUT_LINE" | awk -F'|' '{print $2}') "
+
+    # Update the overall status
+    get_status $EXIT_CODE
+fi
+
+# Remove trailing separators
+OUTPUT=${OUTPUT% | } 
+PERFDATA=${PERFDATA% }
+
+# Print the final output
+case $STATUS in
+    0)
+        echo "OK - All disks are within thresholds: $OUTPUT | $PERFDATA"
+        exit 0
+        ;;
+    1)
+        echo "WARNING - Some disks have warnings: $OUTPUT | $PERFDATA"
+        exit 1
+        ;;
+    2)
+        echo "CRITICAL - Some disks are critical: $OUTPUT | $PERFDATA"
+        exit 2
+        ;;
+    *)
+        echo "UNKNOWN - Unable to determine status: $OUTPUT | $PERFDATA"
+        exit 3
+        ;;
+esac
